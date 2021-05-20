@@ -7,10 +7,16 @@
     <title>Document</title>
   </head>
   <body>
-    <video autoplay id="local-video"></video>
+    <input id="hash-input" />
+    <button id="send-hash-btn">해쉬값 보낸다.</button>
     <video autoplay id="remote-video"></video>
-    <button id="join">join</button>
-    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
-    <script src="./js/index.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"
+      integrity="sha512-iKDtgDyTHjAitUDdLljGhenhPwrbBfqTKWO1mkhSFH3A7blITC9MhYon6SjnMhp4o0rADGw9yAC6EW4t5a4K3g=="
+      crossorigin="anonymous"
+    ></script>
+    <script src="/js/index.js"></script>
   </body>
 </html>
