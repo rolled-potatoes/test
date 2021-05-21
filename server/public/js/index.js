@@ -21,11 +21,22 @@ const $ = (target) => document.querySelector(target);
 const hashInput = $("#hash-input");
 const sendButton = $("#send-hash-btn");
 const remoteVideo = $("#remote-video");
+const localVideo = $("#local-video");
 
+var pcConfig = {
+  iceServers: [
+    {
+      urls: "stun:stun.l.google.com:19302",
+    },
+  ],
+};
+
+connect();
 function connect() {
-  socket = new SockJS("/ws");
+  socket = new SockJS("http://localhost:8080/ws");
   stompClient = Stomp.over(socket);
   stompClient.connect({}, onConnected, onError);
+  stompClient.debug = null;
 }
 
 function onConnected() {
@@ -33,20 +44,24 @@ function onConnected() {
 }
 
 function ondirectMessage(message) {
-  const { type, roomURL, sender } = JSON.parse(message.body);
+  const { type, roomId: roomURL, sender } = JSON.parse(message.body);
 
-  isOffer = type === "MASTER";
+  isOffer = type === "master";
 
   myName = sender;
   roomId = roomURL;
 
   stompClient.subscribe(`/topic/rooms/${roomId}`, onRTC);
 
-  const message = {
-    type: "START",
+  const message2 = {
+    type: "start",
     sender,
   };
-  stompClient.send(`/app/rooms/${roomId}`, {}, JSON.stringify(message));
+
+  startConnect();
+  if (isOffer) {
+    stompClient.send(`/app/rooms/${roomId}`, {}, JSON.stringify(message2));
+  }
 }
 
 function onRTC(message) {
@@ -54,93 +69,102 @@ function onRTC(message) {
   const { type, sender } = description;
 
   if (sender && sender === myName) return;
-
+  console.log(type);
   switch (type) {
-    case "start":
-      {
-        startConnect();
-      }
+    case "start": {
+      startConnect();
       break;
-    case "offer":
-      {
-        if (!isOffer) {
-          startConnect();
-        }
-        pc.setRemoteDescription(new RTCSessionDescription(description)).then(
-          () => doAnswer()
-        );
-      }
+    }
+    case "offer": {
+      // if (!isOffer) {
+      //   startConnect();
+      // }
+      pc.setRemoteDescription(new RTCSessionDescription(description)).then(() =>
+        doAnswer()
+      );
       break;
-    case "answer":
-      {
-        if (isStarted)
-          pc.setRemoteDescription(new RTCSessionDescription(description));
-        break;
+    }
+    case "answer": {
+      if (isStarted) {
       }
+      pc.setRemoteDescription(new RTCSessionDescription(description));
       break;
-    case "candidate":
-      {
-        if (!isStarted) break;
-        const candidate = new RTCIceCandidate({
-          sdpMLineIndex: message.label,
-          candidate: message.candidate,
-        });
+    }
 
-        pc.addIceCandidate(candidate);
-        break;
-      }
+    case "candidate": {
+      if (!isStarted) break;
+      const candidate = new RTCIceCandidate({
+        sdpMLineIndex: description.label,
+        candidate: description.candidate,
+      });
+      pc.addIceCandidate(candidate);
+
       break;
+    }
   }
 }
 
 function startConnect() {
-  if (!isStarted) return;
+  if (isStarted) return;
 
   createConnection();
   pc.addStream(localStream);
   isStarted = true;
-
-  if (isOffer) doCall();
+  if (isOffer) {
+    doCall();
+  }
 }
 
 function setLocalAndSendMessage(description) {
   pc.setLocalDescription(description);
   description.sender = myName;
+
   emitSignerEvent(description);
 }
 
-function doCall() {
-  pc.createOffer(setLocalAndSendMessage, (e) => log(e + "\n call"));
+async function doCall() {
+  pc.createOffer(setLocalAndSendMessage, (e) => console.error(e + "\n call"));
 }
 
 function doAnswer() {
-  pc.createAnswer(setLocalAndSendMessage, (e) => log(e + "\n answer"));
+  pc.createAnswer(setLocalAndSendMessage, (e) =>
+    console.error(e + "\n answer")
+  );
 }
 
 function createConnection() {
   pc = new RTCPeerConnection(pcConfig);
+
   pc.onicecandidate = icecandidateHandler;
-  pc.onstream = remoteStream;
+  pc.onaddstream = remoteStream;
 }
 
 function icecandidateHandler(message) {
-  const { candidate } = JSON.parse(message.body);
+  let candidate;
+  if (typeof message === "string") {
+    candidate = JSON.parse(message.body).candidate;
+  } else {
+    candidate = message.candidate;
+  }
+  // const { candidate } = JSON.parse(message.body);
   if (!candidate) return;
 
-  const message = {
-    type: "CANDIDATE",
+  const message2 = {
+    type: "candidate",
     label: candidate.sdpMLineIndex,
     id: candidate.sdpMid,
     candidate: candidate.candidate,
+    sender: myName,
   };
 
-  emitSignerEvent(message);
+  emitSignerEvent(message2);
 }
 
 function remoteStream(event) {
-  remoteVideo.srcObjec = event.stream;
+  remoteVideo.srcObject = event.stream;
 }
 
+sendButton.addEventListener("click", onSubmitHash);
 function onSubmitHash() {
   const hashqueue = hashInput.value.trim();
   stompClient.send("/app/hash/" + hashqueue + "/join");
@@ -151,102 +175,26 @@ function onError(e) {
 }
 
 function getNavigator() {
-  navigator.getUserMedia({ video: false, audio: true }, (stream) => {
-    localStream = stream;
-  });
+  navigator.getUserMedia(
+    { video: true, audio: false },
+    (stream) => {
+      localStream = stream;
+      // localVideo.srcObject = stream;
+    },
+    (e) => {
+      console.log(e);
+    }
+  );
 }
 
 getNavigator();
 
 function emitSignerEvent(data) {
-  stompClient.send(`/app/rooms/${roomId}`, {}, JSON.stringify(data));
+  if (data.type === "offer" || data.type === "answer")
+    stompClient.send(
+      `/app/rooms/${roomId}`,
+      {},
+      JSON.stringify({ sender: data.sender, type: data.type, sdp: data.sdp })
+    );
+  else stompClient.send(`/app/rooms/${roomId}`, {}, JSON.stringify(data));
 }
-
-/*
-function startConnection() {
-  
-  if (!isStarted && typeof local_track !== "undefined" && isReady) {
-    createConnection();
-    pc.addTrack(local_track);
-    isStarted = true;
-
-    if (isOffer) {
-      doCall();
-    }
-  }
-}
- */
-
-/*
-
-socket.on("message", (message) => {
-    if (message === "start") {
-      startConnection();
-      return;
-    }
-
-    switch (message.type) {
-      case "offer": {
-        if (!isOffer && !isStarted) {
-          startConnection();
-        }
-        pc.setRemoteDescription(new RTCSessionDescription(message)).then(() =>
-          doAnswer()
-        );
-
-        break;
-      }
-      case "answer": {
-        if (isStarted)
-          pc.setRemoteDescription(new RTCSessionDescription(message));
-        break;
-      }
-      case "candidate": {
-        if (!isStarted) break;
-        const candidate = new RTCIceCandidate({
-          sdpMLineIndex: message.label,
-          candidate: message.candidate,
-        });
-
-        pc.addIceCandidate(candidate);
-        break;
-      }
-    }
-
-*/
-
-/*
-
-function icecandidateHandler({ candidate }) {
-  if (!candidate) return;
-
-  const message = {
-    type: "candidate",
-    label: candidate.sdpMLineIndex,
-    id: candidate.sdpMid,
-    candidate: candidate.candidate,
-  };
-
-  emitSignerEvent(message);
-}
-
-async function remoteTrackHandler(event) {
-  const remoteStream = new MediaStream();
-  remote_video.srcObject = remoteStream;
-  remoteStream.addTrack(event.track, remoteStream);
-}
-
-function doCall() {
-  pc.createOffer(setLocalAndSendMessage, (e) => log(e + "\n call"));
-}
-
-function doAnswer() {
-  pc.createAnswer(setLocalAndSendMessage, (e) => log(e + "\n answer"));
-}
-
-function setLocalAndSendMessage(description) {
-  pc.setLocalDescription(description);
-  emitSignerEvent(description);
-}
-
-*/
