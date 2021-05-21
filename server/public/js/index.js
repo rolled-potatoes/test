@@ -21,7 +21,6 @@ const $ = (target) => document.querySelector(target);
 const hashInput = $("#hash-input");
 const sendButton = $("#send-hash-btn");
 const remoteVideo = $("#remote-video");
-const localVideo = $("#local-video");
 
 var pcConfig = {
   iceServers: [
@@ -76,9 +75,9 @@ function onRTC(message) {
       break;
     }
     case "offer": {
-      // if (!isOffer) {
-      //   startConnect();
-      // }
+      if (!isOffer) {
+        startConnect();
+      }
       pc.setRemoteDescription(new RTCSessionDescription(description)).then(() =>
         doAnswer()
       );
@@ -86,8 +85,8 @@ function onRTC(message) {
     }
     case "answer": {
       if (isStarted) {
+        pc.setRemoteDescription(new RTCSessionDescription(description));
       }
-      pc.setRemoteDescription(new RTCSessionDescription(description));
       break;
     }
 
@@ -146,7 +145,7 @@ function icecandidateHandler(message) {
   } else {
     candidate = message.candidate;
   }
-  // const { candidate } = JSON.parse(message.body);
+
   if (!candidate) return;
 
   const message2 = {
@@ -179,7 +178,6 @@ function getNavigator() {
     { video: true, audio: false },
     (stream) => {
       localStream = stream;
-      // localVideo.srcObject = stream;
     },
     (e) => {
       console.log(e);
